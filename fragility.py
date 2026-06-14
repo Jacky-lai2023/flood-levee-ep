@@ -79,45 +79,59 @@ def main():
     mp = lognormal(rng, MP_MED, MP_COV, N_ALEATORY)
     crest = lognormal(rng, CREST_MED, CREST_COV, N_ALEATORY)
 
-    # Per k-draw fragility curve.
-    curves = np.empty((N_KDRAWS, len(H_GRID)))
-    pip_curves = np.empty_like(curves)
-    ovt_curves = np.empty_like(curves)
+    # Per k-draw curves. The union is PARTITIONED into mutually exclusive mechanism
+    # regions so the split is coherent: piping and overtopping are NOT exclusive (both
+    # driven by the same head H), so P_pip + P_ovt double-counts their overlap. Only
+    # piping-only + overtopping-only + both sums to the union P(breach).
+    curves = np.empty((N_KDRAWS, len(H_GRID)))      # P(breach | H) = union
+    pip_curves = np.empty_like(curves)              # P(piping | H)      marginal
+    ovt_curves = np.empty_like(curves)              # P(overtopping | H) marginal
+    piponly_curves = np.empty_like(curves)          # P(piping & !overtop | H)
+    ovtonly_curves = np.empty_like(curves)          # P(overtop & !piping | H)
+    both_curves = np.empty_like(curves)             # P(piping & overtop | H)
     for i, k in enumerate(kdraws):
         Hc = sellmeijer_critical_head(np.full(N_ALEATORY, k), d70, D, L, mp)  # (N_ALEATORY,)
-        # breach indicators over H grid: (len_H, N_ALEATORY)
-        piping = H_GRID[:, None] >= Hc[None, :]
+        piping = H_GRID[:, None] >= Hc[None, :]      # (len_H, N_ALEATORY)
         overtop = H_GRID[:, None] >= crest[None, :]
-        breach = piping | overtop
-        curves[i] = breach.mean(1)
+        curves[i] = (piping | overtop).mean(1)
         pip_curves[i] = piping.mean(1)
         ovt_curves[i] = overtop.mean(1)
+        piponly_curves[i] = (piping & ~overtop).mean(1)
+        ovtonly_curves[i] = (overtop & ~piping).mean(1)
+        both_curves[i] = (piping & overtop).mean(1)
 
+    # ONE statistic for every probability: the mean over the k-posterior (the proper
+    # expectation for a point estimate). The median curve + quantile band are display-only.
+    frag_mean = curves.mean(0)
     frag_med = np.median(curves, 0)
     frag_lo = np.quantile(curves, 0.025, 0)
     frag_hi = np.quantile(curves, 0.975, 0)
-    pip_med = pip_curves.mean(0)
-    ovt_med = ovt_curves.mean(0)
+    pip_mean = pip_curves.mean(0)
+    ovt_mean = ovt_curves.mean(0)
+    piponly_mean = piponly_curves.mean(0)
+    ovtonly_mean = ovtonly_curves.mean(0)
+    both_mean = both_curves.mean(0)
 
-    # Half-breach head (P=0.5) for the median curve.
-    h50 = float(np.interp(0.5, frag_med, H_GRID))
+    h50 = float(np.interp(0.5, frag_mean, H_GRID))
     print(f"FRAGILITY — {N_KDRAWS} k-draws x {N_ALEATORY} aleatory draws")
     print(f"  Sellmeijer F_R = {ETA*(GAMMA_SP/GAMMA_W)*np.tan(np.deg2rad(THETA_DEG)):.3f}")
-    print(f"  half-breach head P(breach)=0.5 at H = {h50:.2f} m (median curve)")
+    print(f"  half-breach head P(breach)=0.5 at H = {h50:.2f} m (mean curve)")
     for h in (3.0, 4.0, 5.0, 5.74):
         j = int(np.argmin(np.abs(H_GRID - h)))
-        print(f"  P(breach | H={h:.2f} m) = {frag_med[j]:.3f}  [{frag_lo[j]:.3f}, {frag_hi[j]:.3f}]")
+        print(f"  P(breach | H={h:.2f} m) = {frag_mean[j]:.3f}  [{frag_lo[j]:.3f}, {frag_hi[j]:.3f}]")
 
     np.savez(
         OUT_DIR / "fragility.npz",
-        h_grid=H_GRID, curves=curves, frag_med=frag_med, frag_lo=frag_lo, frag_hi=frag_hi,
-        pip_med=pip_med, ovt_med=ovt_med, h50=h50,
+        h_grid=H_GRID, curves=curves,
+        frag_mean=frag_mean, frag_med=frag_med, frag_lo=frag_lo, frag_hi=frag_hi,
+        pip_mean=pip_mean, ovt_mean=ovt_mean,
+        piponly_mean=piponly_mean, ovtonly_mean=ovtonly_mean, both_mean=both_mean, h50=h50,
     )
-    plot_fragility(H_GRID, frag_med, frag_lo, frag_hi, pip_med, ovt_med, curves)
+    plot_fragility(H_GRID, frag_mean, frag_lo, frag_hi, pip_mean, ovt_mean, curves)
     print("  saved -> outputs/fragility.npz, figures/fragility_curve.png")
 
 
-def plot_fragility(h, med, lo, hi, pip, ovt, curves):
+def plot_fragility(h, mean, lo, hi, pip, ovt, curves):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(7.0, 4.6))
@@ -125,9 +139,9 @@ def plot_fragility(h, med, lo, hi, pip, ovt, curves):
     for c in curves[:: max(1, len(curves) // 40)]:
         ax.plot(h, c, color="#9DB4C0", lw=0.5, alpha=0.4)
     ax.fill_between(h, lo, hi, color="#5B8FB9", alpha=0.30, label="95% CrI (from reconstructed k)")
-    ax.plot(h, med, color="#1F3A5F", lw=2.4, label="fragility — combined")
-    ax.plot(h, pip, color="#C44536", lw=1.6, ls="--", label="piping only (Sellmeijer)")
-    ax.plot(h, ovt, color="#E08E45", lw=1.6, ls=":", label="overtopping only")
+    ax.plot(h, mean, color="#1F3A5F", lw=2.4, label="fragility — combined (mean)")
+    ax.plot(h, pip, color="#C44536", lw=1.6, ls="--", label="piping marginal (Sellmeijer)")
+    ax.plot(h, ovt, color="#E08E45", lw=1.6, ls=":", label="overtopping marginal")
     ax.set_xlabel("River head at levee H (m)")
     ax.set_ylabel("P(breach | H)")
     ax.set_title("Levee breach fragility")

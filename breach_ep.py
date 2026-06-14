@@ -35,20 +35,29 @@ def main():
     haz = np.load(OUT_DIR / "hazard.npz", allow_pickle=False)
     fr = np.load(OUT_DIR / "fragility.npz")
     h_grid = fr["h_grid"]
-    frag_med, pip_med, ovt_med = fr["frag_med"], fr["pip_med"], fr["ovt_med"]
+    frag_mean = fr["frag_mean"]          # expected fragility (mean over k-posterior)
+    piponly_mean, ovtonly_mean, both_mean = fr["piponly_mean"], fr["ovtonly_mean"], fr["both_mean"]
     curves = fr["curves"]                # (n_kdraws, len_h) epistemic-from-k
     pred_head = haz["pred_head"]         # posterior-predictive annual-max head catalogue
     mu, sigma, xi = haz["post_mu"], haz["post_sigma"], haz["post_xi"]
 
-    # ---- point estimate: marginal fragility x posterior-predictive head ----
-    P_f = float(np.mean(curve_eval(pred_head, h_grid, frag_med)))
-    P_pip = float(np.mean(curve_eval(pred_head, h_grid, pip_med)))
-    P_ovt = float(np.mean(curve_eval(pred_head, h_grid, ovt_med)))
+    # ---- point estimate: expected fragility x posterior-predictive head ----
+    P_f = float(np.mean(curve_eval(pred_head, h_grid, frag_mean)))
+    # Coherent mechanism attribution: partition the UNION into mutually exclusive
+    # regions (piping-only, overtopping-only, both) that sum to P_f. Reporting
+    # P_pip/(P_pip+P_ovt) would double-count the overlap (both mechanisms ride the
+    # same head H), so that denominator can exceed P_f — incoherent for a union.
+    P_pip_only = float(np.mean(curve_eval(pred_head, h_grid, piponly_mean)))
+    P_ovt_only = float(np.mean(curve_eval(pred_head, h_grid, ovtonly_mean)))
+    P_both = float(np.mean(curve_eval(pred_head, h_grid, both_mean)))
+    P_pip = P_pip_only + P_both          # piping involved in the breach
+    P_ovt = P_ovt_only + P_both          # overtopping involved in the breach
     print(f"BREACH EP — convolving hazard x fragility")
     print(f"  annual breach probability  P_f = {P_f:.4f}  ->  return period {1/P_f:,.0f} yr")
-    print(f"  by mechanism (annual): piping {P_pip:.4f} (RP {1/P_pip:,.0f} yr) | "
-          f"overtopping {P_ovt:.5f} (RP {1/P_ovt:,.0f} yr)")
-    print(f"  -> piping dominates: {P_pip/(P_pip+P_ovt)*100:.0f}% of breach exposure")
+    print(f"  partition (sums to P_f): piping-only {P_pip_only:.4f} | overtopping-only "
+          f"{P_ovt_only:.5f} | both {P_both:.5f}  (check {P_pip_only+P_ovt_only+P_both:.4f})")
+    print(f"  piping involved in {P_pip/P_f*100:.0f}% of breach exposure "
+          f"(overtopping {P_ovt/P_f*100:.0f}%; they overlap by {P_both/P_f*100:.0f} pp)")
 
     # ---- credible interval: pair hazard-posterior draws with k-fragility curves ----
     rng = np.random.default_rng(2026)
@@ -70,7 +79,7 @@ def main():
     # ---- synthetic breach event catalogue ----
     n_cat = 50000
     sim_head = rng.choice(pred_head, size=n_cat, replace=True)
-    breach = rng.uniform(size=n_cat) < curve_eval(sim_head, h_grid, frag_med)
+    breach = rng.uniform(size=n_cat) < curve_eval(sim_head, h_grid, frag_mean)
     n_breach = int(breach.sum())
     print(f"  synthetic catalogue: {n_breach} breaches in {n_cat:,} simulated years "
           f"(rate {n_breach/n_cat:.4f}); mean head at breach {sim_head[breach].mean():.2f} m")
@@ -82,7 +91,8 @@ def main():
 
     np.savez(
         OUT_DIR / "breach_ep.npz",
-        P_f=P_f, P_pip=P_pip, P_ovt=P_ovt, pf_med=pf_med, pf_lo=pf_lo, pf_hi=pf_hi,
+        P_f=P_f, P_pip=P_pip, P_ovt=P_ovt, P_pip_only=P_pip_only, P_ovt_only=P_ovt_only, P_both=P_both,
+        pf_med=pf_med, pf_lo=pf_lo, pf_hi=pf_hi,
         h_levels=h_levels, hazard_ep=hazard_ep, breach_ep=breach_ep,
         n_breach=n_breach, n_cat=n_cat, mean_head_breach=float(sim_head[breach].mean()),
     )
@@ -92,7 +102,8 @@ def main():
     # one-line headline for the README
     print("\nHEADLINE:")
     print(f"  Levee annual breach probability {P_f:.3f} (1-in-{1/P_f:.0f} yr), "
-          f"95% CrI 1-in-{1/pf_hi:.0f} to 1-in-{1/pf_lo:.0f} yr; piping-dominated.")
+          f"95% CrI 1-in-{1/pf_hi:.0f} to 1-in-{1/pf_lo:.0f} yr; "
+          f"piping involved in {P_pip/P_f*100:.0f}% of breaches.")
 
 
 def plot_ep(h, hazard_ep, breach_ep, P_f, pf_lo, pf_hi):

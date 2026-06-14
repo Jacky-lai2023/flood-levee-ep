@@ -20,7 +20,9 @@ modelling genuinely meet.
 ## Headline result
 
 > **Idealised Thames-at-Kingston levee: annual breach probability P_f = 0.008, i.e. a
-> 1-in-122-year breach (95% CrI 1-in-49 to 1-in-475 yr), piping-dominated (62% of exposure).**
+> 1-in-119-year breach (95% CrI 1-in-49 to 1-in-475 yr); piping is involved in ~80% of
+> breaches (overtopping ~49%, the two overlapping by ~29 percentage points — they share the
+> same driving head, so a coherent partition is piping-only / overtopping-only / both, summing to P_f).**
 > Uncertainty propagates *both* the flood-hazard GEV posterior *and* the reconstructed-k
 > posterior into that interval.
 
@@ -32,8 +34,8 @@ modelling genuinely meet.
 | k-field: effective seepage-path k (posterior) | **9.9×10⁻⁵ m/s** [8.7, 11.3]×10⁻⁵ (true 9.4×10⁻⁵) |
 | k-field: reconstruction from 5 soundings | RMSE 0.18 log₁₀-units |
 | Fragility: half-breach head | **6.26 m**; P(breach \| 100-yr head) = 0.17 |
-| **Breach: annual probability P_f** | **0.0082 → 1-in-122 yr** (CrI 1-in-49 … 1-in-475) |
-| Breach: dominant mechanism | **piping 1-in-149 yr (62%)** vs overtopping 1-in-242 yr |
+| **Breach: annual probability P_f** | **0.0084 → 1-in-119 yr** (CrI 1-in-49 … 1-in-475) |
+| Breach: mechanism partition (sums to P_f) | **piping-only 0.0042 / overtopping-only 0.0017 / both 0.0025** → piping involved in ~80% |
 
 ![hazard](figures/hazard_returnlevels.png)
 ![kfield](figures/kfield_reconstruction.png)
@@ -98,7 +100,7 @@ JAX is pinned to CPU for bit-identical NUTS on any machine; all seeds are fixed.
 - Stationary flood frequency — no non-stationarity / climate trend in the GEV (the AMAX record
   shows the well-known recent clustering but it is not modelled here).
 - The discharge→head rating and the levee geometry are calibrated illustrative values, so the
-  *absolute* 1-in-122-yr figure is demonstrative; the **method** (uncertainty-propagating
+  *absolute* 1-in-119-yr figure is demonstrative; the **method** (uncertainty-propagating
   hazard→fragility→EP with a data-reconstructed k) is the deliverable.
 - Piping and overtopping only; slope instability and micro-instability are out of scope.
 

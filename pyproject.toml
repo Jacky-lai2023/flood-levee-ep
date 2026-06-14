@@ -1,0 +1,24 @@
+[project]
+name = "flood-levee-ep"
+version = "0.1.0"
+# Pinned >=3.11,<3.14 for the same reason as the sibling ibtracs-gev-na project:
+# under a wider range uv can resolve two different numpyro/jax major branches,
+# which perturbs NUTS posterior tails even with identical seeds.
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "jax>=0.4",
+    "matplotlib>=3.7",
+    "numpy>=1.24",
+    "numpyro>=0.13",
+    "pandas>=2.0",
+    "requests>=2.28",
+    "scipy>=1.11",
+]
+
+[tool.uv]
+index-strategy = "first-index"
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true

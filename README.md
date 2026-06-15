@@ -143,6 +143,10 @@ JAX is pinned to CPU for bit-identical NUTS on any machine; all seeds are fixed.
 - The discharge→head rating and the levee geometry are calibrated illustrative values, so the
   *absolute* 1-in-108-yr figure is demonstrative; the **method** (uncertainty-propagating
   hazard→fragility→EP with a data-reconstructed k) is the deliverable.
+- **Overtopping is modelled as crest exceedance (`H ≥ crest`), i.e. an upper bound on overtopping
+  breach** — there is no overtopping-erosion fragility (no dependence on overtopping depth/duration or
+  landside-slope erosion resistance), so the overtopping breach contribution, and hence its ~61% share,
+  is over-estimated (conservative). A fuller model would replace the step with an erosion fragility.
 - Piping and overtopping only; slope instability and micro-instability are out of scope.
 
 ## Development note — AI-paired build

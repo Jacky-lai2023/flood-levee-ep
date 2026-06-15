@@ -43,7 +43,10 @@ MP_MED, MP_COV = 1.0, 0.12          # Sellmeijer model-uncertainty factor
 CREST_MED, CREST_COV = 6.5, 0.05    # levee crest height above landside ground (m)
 
 H_GRID = np.linspace(0.0, 8.0, 81)
-N_ALEATORY = 600
+# N_ALEATORY large enough that the (common-random-number) aleatory realization is a
+# low-MC-error estimate of the expectation, so the per-k fragility curves and the 95%
+# band do not ride on one lucky aleatory draw (tail MC std ~ sqrt(p(1-p)/N) ~ 0.003 at p=0.04).
+N_ALEATORY = 4000
 N_KDRAWS = 500
 SEED = 99
 

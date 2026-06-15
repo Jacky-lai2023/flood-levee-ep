@@ -19,23 +19,30 @@ modelling genuinely meet.
 
 ## Headline result
 
-> **Idealised Thames-at-Kingston levee: annual breach probability P_f = 0.008, i.e. a
-> 1-in-119-year breach (95% CrI 1-in-49 to 1-in-475 yr); piping is involved in ~80% of
-> breaches (overtopping ~49%, the two overlapping by ~29 percentage points — they share the
-> same driving head, so a coherent partition is piping-only / overtopping-only / both, summing to P_f).**
-> Uncertainty propagates *both* the flood-hazard GEV posterior *and* the reconstructed-k
-> posterior into that interval.
+> **Idealised Thames-at-Kingston levee, one synthetic foundation realization: annual breach
+> probability P_f ≈ 0.006, i.e. a 1-in-175-year breach (95% CrI 1-in-65 to 1-in-1041 yr).**
+> Both mechanisms contribute — piping is involved in ~53% of breaches, overtopping in ~74%
+> (they overlap by ~28 pp, sharing the driving head; the coherent partition piping-only /
+> overtopping-only / both sums to P_f). The CrI propagates *both* the flood-hazard GEV
+> posterior *and* the reconstructed-k posterior.
+>
+> **The absolute figure is conditional and demonstrative, not a property of real levees.**
+> Across 14 synthetic foundation realizations P_f spans ~9× (1-in-26 … 1-in-238 yr, median
+> ~1-in-227); the seed-2026 headline is a moderately pessimistic (~71st-pct) draw. The
+> *method* — an uncertainty-propagating hazard→fragility→EP chain with a data-reconstructed
+> k — is the deliverable.
 
 | Quantity | Value |
 |---|---|
 | Hazard: 100-yr discharge (Bayesian median) | **678 m³/s** [610, 800] — MLE 666 / L-moments 660 |
 | Hazard: GEV shape ξ (three methods) | **−0.048 / −0.056 / −0.063** (near-Gumbel, agreement) |
 | Hazard NUTS diagnostics | R-hat 1.000, min ESS 4088, 16/8000 divergences |
-| k-field: effective seepage-path k (posterior) | **9.9×10⁻⁵ m/s** [8.7, 11.3]×10⁻⁵ (true 9.4×10⁻⁵) |
+| k-field: effective seepage-path k (series/parallel) | **7.3×10⁻⁵ m/s** [5.9, 8.3]×10⁻⁵ (true 7.5×10⁻⁵) |
 | k-field: reconstruction from 5 soundings | RMSE 0.18 log₁₀-units |
-| Fragility: half-breach head | **6.26 m**; P(breach \| 100-yr head) = 0.17 |
-| **Breach: annual probability P_f** | **0.0084 → 1-in-119 yr** (CrI 1-in-49 … 1-in-475) |
-| Breach: mechanism partition (sums to P_f) | **piping-only 0.0042 / overtopping-only 0.0017 / both 0.0025** → piping involved in ~80% |
+| Fragility: half-breach head | **6.39 m**; P(breach \| 100-yr head) = 0.06 |
+| **Breach: annual probability P_f (seed 2026)** | **0.0057 → 1-in-175 yr** (CrI 1-in-65 … 1-in-1041) |
+| Breach: across 14 foundation realizations | 1-in-26 … 1-in-238 yr (~9× spread), median ~1-in-227 |
+| Breach: mechanism partition (sums to P_f) | **piping-only 0.0015 / overtopping-only 0.0027 / both 0.0016** → piping ~53%, overtopping ~74% |
 
 ![hazard](figures/hazard_returnlevels.png)
 ![kfield](figures/kfield_reconstruction.png)
@@ -55,10 +62,14 @@ The Bayesian posterior is carried forward as a posterior-predictive catalogue of
 log₁₀(k) field is reconstructed from **5 sparse vertical CPT-like soundings** by Bayesian
 compressed sensing: a Gaussian RBF dictionary + a Park & Casella (2008) Bayesian-Lasso Gibbs
 sampler (a slim, self-contained re-implementation of my dissertation engine). The output is the
-**posterior distribution of the effective seepage-path conductivity k_eff** — soil uncertainty
-that flows from data, not a textbook lognormal. (The pointwise field CrI coverage is ~0.79,
-slightly over-confident — the same "denser arrays over-confident" behaviour I documented in the
-dissertation; the aggregate k_eff is well-calibrated, with the truth inside its 95% interval.)
+**posterior of the effective seepage-path conductivity k_eff**, reduced from the 2D field by the
+*series/parallel* rule appropriate to along-path Darcy flow (depth-arithmetic-mean per column,
+then harmonic-mean along the flow direction) — **not** a geometric mean (that is the heuristic for
+areal 2D flow and biases k_eff high here). This is data-driven soil information, not a textbook
+lognormal. (The pointwise field CrI coverage is ~0.79, slightly over-confident — the same "denser
+arrays over-confident" behaviour I documented in the dissertation; the aggregate k_eff is
+well-calibrated, the truth inside its 95% interval. Caveat in Limitations: collapsing the field to
+a scalar mean understates that piping *initiates* at the most-permeable local path.)
 
 **3 — Fragility (`fragility.py`).** Sellmeijer (2011) backward-erosion piping critical head
 `Hc = L·F_R·F_S·F_G`, with k drawn from the Stage-2 posterior and d70, aquifer thickness,
@@ -94,13 +105,28 @@ JAX is pinned to CPU for bit-identical NUTS on any machine; all seeds are fixed.
 
 ## Limitations
 
+- **Conditional on one synthetic foundation realization.** P_f flows from a single random "true"
+  k-field (seed 2026). Across 14 realizations it spans ~9× (1-in-26 … 1-in-238 yr, median ~1-in-227);
+  the headline seed is moderately pessimistic (~71st pct). A production answer would report the
+  realization distribution, not a point — here the point is the *method*.
+- **Scalar k_eff is a simplification of the piping limit state.** Backward-erosion piping *initiates*
+  at the most-permeable connected path (a high quantile of the field); a single bulk-flow k_eff
+  (even the series/parallel one used here, which is correct for bulk flow) understates that local
+  extreme. A fuller model would carry the field's spatial structure into the erosion criterion.
+- **The fragility band is not k-dominated.** The reconstructed k is well-constrained, so its posterior
+  is tight; the breach uncertainty is dominated by the Sellmeijer model-uncertainty factor and the
+  seepage-length prior (literature lognormals). The reconstruction's value is *pinning the central k
+  from data*, not contributing most of the variance — stated plainly rather than oversold.
+- **The mechanism split is parameterisation-dependent.** Piping vs overtopping share moves strongly
+  with seepage length / crest / realization (piping involvement ranges roughly 20–100% across
+  plausible parameters), so "piping ~53%" is a property of *this* idealised levee, not of flood levees.
 - Single idealised cross-section; no spatial reach of multiple levee segments, no 2D/3D FE seepage
   (the dissertation's full field solver is reused only to *produce* the k posterior, not re-solved
   per Monte-Carlo draw).
 - Stationary flood frequency — no non-stationarity / climate trend in the GEV (the AMAX record
   shows the well-known recent clustering but it is not modelled here).
 - The discharge→head rating and the levee geometry are calibrated illustrative values, so the
-  *absolute* 1-in-119-yr figure is demonstrative; the **method** (uncertainty-propagating
+  *absolute* 1-in-175-yr figure is demonstrative; the **method** (uncertainty-propagating
   hazard→fragility→EP with a data-reconstructed k) is the deliverable.
 - Piping and overtopping only; slope instability and micro-instability are out of scope.
 

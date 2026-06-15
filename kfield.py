@@ -16,6 +16,7 @@ Run:  uv run python kfield.py
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +35,9 @@ SD_LOG10K = 0.5      # spatial variability -> k spans ~ 3e-5 .. 3e-4 m/s
 LEN_X, LEN_Y = 26.0, 3.5  # anisotropic correlation: long horizontal, short vertical (layering)
 NUG_FRAC = 0.10
 N_COLUMNS = 5     # number of CPT-like soundings
-SEED = 2026
+# SEED fixes the synthetic "true" foundation field. The headline is conditional on this one
+# realization; override via KFIELD_SEED to sweep realizations (see robustness.py / README).
+SEED = int(os.environ.get("KFIELD_SEED", "2026"))
 
 
 # ----------------------------------------------------------------------------
@@ -178,17 +181,30 @@ def main():
     coverage = float(np.mean((field >= lo) & (field <= hi)))
     print(f"  reconstruction RMSE {rmse:.3f} log10-units | 95% CrI coverage {coverage:.3f}")
 
-    # Effective seepage-path k: geometric mean of k over the basal seepage zone
-    # (bottom 40% of aquifer, central L metres under the levee).
+    # Effective seepage-path k for the Sellmeijer piping path. Backward-erosion piping is
+    # driven by ~1D Darcy flow ALONG a near-horizontal path under the levee, so the correct
+    # bulk reduction is directional series/parallel, NOT a geometric mean (which is the
+    # heuristic for areal 2D flow): arithmetic-mean k over depth within each x-column
+    # (transverse / parallel to the path), then harmonic-mean those columns along x (series
+    # along the flow direction). NB this is still a BULK reduction — piping *initiates* at the
+    # most-permeable connected path (a high quantile of the field), so the scalar k_eff is a
+    # deliberate simplification of this limit state (see README limitations).
     L_seep = 70.0
     cx0, cx1 = (W - L_seep) / 2, (W + L_seep) / 2
-    zone = (yy <= 0.4 * D) & (xx >= cx0) & (xx <= cx1)
-    zone_flat = zone.ravel()
-    eff_log10k = recon[:, zone_flat].mean(1)   # per-draw geometric-mean log10(k)
-    keff = 10.0 ** eff_log10k
-    true_eff = 10.0 ** field.ravel()[zone_flat].mean()
+    row_mask = y <= 0.4 * D
+    col_mask = (x >= cx0) & (x <= cx1)
+
+    def series_parallel_keff(k_grid):
+        # k_grid: (..., NY, NX) hydraulic conductivity. Returns (...,) effective k.
+        sub = k_grid[..., row_mask, :][..., :, col_mask]      # (..., n_rows, n_cols)
+        k_col = sub.mean(axis=-2)                              # depth arithmetic mean -> (..., n_cols)
+        return k_col.shape[-1] / (1.0 / k_col).sum(axis=-1)    # harmonic mean along flow
+
+    keff = series_parallel_keff(10.0 ** recon.reshape(-1, NY, NX))   # (n_draws,)
+    eff_log10k = np.log10(keff)
+    true_eff = float(series_parallel_keff(10.0 ** field))
     em, elo, ehi = np.median(keff), np.quantile(keff, 0.025), np.quantile(keff, 0.975)
-    print(f"  effective seepage-path k: posterior median {em:.2e} m/s "
+    print(f"  effective seepage-path k (series/parallel): posterior median {em:.2e} m/s "
           f"[{elo:.2e}, {ehi:.2e}] (true {true_eff:.2e})")
 
     np.savez(

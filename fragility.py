@@ -36,13 +36,17 @@ D70M = 2.08e-4             # reference grain size (m)
 NU = 1.33e-6              # kinematic viscosity of water ~10 C (m2/s)
 
 # ---- aleatory parameter distributions (lognormal: median, coefficient of var) ----
-D70_MED, D70_COV = 2.0e-4, 0.12     # representative grain size (m)
+# d70 set Hazen-consistent with the foundation k (k~5e-5 m/s => d10~0.07 mm, d70~0.15 mm
+# fine sand): k ~ 0.0116*d10^2 [m/s, mm]. Keeps the grain size and the reconstructed
+# conductivity internally consistent rather than from an unrelated literature lognormal.
+D70_MED, D70_COV = 1.5e-4, 0.12     # representative grain size (m)
 DAQ_MED, DAQ_COV = 10.0, 0.10       # aquifer thickness (m)
 LSEEP_MED, LSEEP_COV = 70.0, 0.10   # seepage length under the levee (m)
 MP_MED, MP_COV = 1.0, 0.12          # Sellmeijer model-uncertainty factor
-CREST_MED, CREST_COV = 6.5, 0.05    # levee crest height above landside ground (m)
+CREST_MED, CREST_COV = 6.5, 0.10    # crest height (m); COV 0.10 covers settlement/survey/wave allowance
 
-H_GRID = np.linspace(0.0, 8.0, 81)
+H_GRID = np.linspace(0.0, 12.0, 121)  # to 12 m: predictive heads reach ~11.6 m, so the
+                                      # fragility/partition are not np.interp-clamped at the tail
 # N_ALEATORY large enough that the (common-random-number) aleatory realization is a
 # low-MC-error estimate of the expectation, so the per-k fragility curves and the 95%
 # band do not ride on one lucky aleatory draw (tail MC std ~ sqrt(p(1-p)/N) ~ 0.003 at p=0.04).

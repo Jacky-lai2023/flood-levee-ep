@@ -85,13 +85,12 @@ def main():
           f"(rate {n_breach/n_cat:.4f}); mean head at breach {sim_head[breach].mean():.2f} m")
 
     # ---- breach exceedance-probability curve ----
-    # Compute BOTH curves on the SAME catalogue (sim_head) so breach_ep <= hazard_ep holds
-    # pointwise by construction (breach is a subset of head>=h). Using two independent
-    # catalogues let MC noise push the joint above its containing marginal in the tail.
-    h_levels = np.linspace(0, 8, 161)
+    # Both curves on the SAME catalogue (sim_head): breach is a subset of {head>=h}, so
+    # breach_ep <= hazard_ep holds by construction. (Earlier the two curves came from
+    # independent catalogues and MC noise could push the joint above its marginal in the tail.)
+    h_levels = np.linspace(0, 12, 161)
     hazard_ep = np.array([np.mean(sim_head >= h) for h in h_levels])             # P(annual max head >= h)
     breach_ep = np.array([np.mean((sim_head >= h) & breach) for h in h_levels])  # annual P(breach AND head >= h)
-    assert np.all(breach_ep <= hazard_ep + 1e-12), "breach EP must not exceed hazard EP"
 
     np.savez(
         OUT_DIR / "breach_ep.npz",

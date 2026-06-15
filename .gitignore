@@ -16,5 +16,12 @@ __pycache__/
 # Regenerable outputs (figures ARE tracked — rendered for the README)
 outputs/*.npz
 
-# Cached NRFA pull (regenerable via download.py); keep the dir
+# Cached NRFA pull. Commit the canonical station so a fresh clone reproduces the exact
+# n=142, 1883-2024 record from the repo alone (the NRFA API is live/mutable); ignore others.
 data/*.json
+!data/amax_39001.json
+
+# Stray audit/experiment probe scripts (never commit)
+_*.py
+test_*.py
+*_tmp.py

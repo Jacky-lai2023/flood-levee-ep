@@ -9,8 +9,10 @@ from Sparse CPT - Bayesian Compressed Sensing"), here repurposed to feed a flood
 piping fragility instead of a dam seepage model.
 
 The deliverable for Stage 3 is the *posterior distribution of the effective seepage-path
-hydraulic conductivity* k_eff (geometric mean of k along the piping path) - i.e. soil
-uncertainty that flows from sparse data, not a generic textbook lognormal.
+hydraulic conductivity* k_eff, reduced from the 2D field by the directional series/parallel
+rule for along-path underseepage (arithmetic-mean over the full aquifer depth per column,
+then harmonic-mean those columns along the flow path) - i.e. soil uncertainty that flows
+from sparse data, not a generic textbook lognormal.
 
 Run:  uv run python kfield.py
 """
@@ -90,13 +92,19 @@ def basis_centres(spacing_x=8.0, spacing_y=3.0):
 class BayesianLasso:
     def __init__(self, X, y, a0=1e-2, b0=1e-2, r=1.0, delta=10.0, seed=0):
         self.rng = np.random.default_rng(seed)
-        self.X, self.y = np.asarray(X, float), np.asarray(y, float)
-        self.n, self.p = self.X.shape
+        self.y = np.asarray(y, float)
+        X = np.asarray(X, float)
+        self.n, self.p = X.shape
         self.ymean = self.y.mean()
         self.yc = self.y - self.ymean
+        # Column-centre the design so the intercept mu is orthogonal to beta (P&C convention):
+        # with un-centred RBF columns mu and beta are confounded and mu fails to mix
+        # (ridge / R-hat ~1.3). Centring decouples them. Reconstruct with (Phi - Xmean) @ beta.
+        self.Xmean = X.mean(0)
+        self.X = X - self.Xmean
         self.XtX = self.X.T @ self.X
         self.Xty = self.X.T @ self.yc
-        self.ones = self.X.sum(0)
+        self.ones = self.X.sum(0)   # ~0 after centring -> mu decoupled from beta
         self.a0, self.b0, self.r, self.delta = a0, b0, r, delta
 
     def _chol(self, A):
@@ -168,8 +176,8 @@ def main():
     beta_s, mu_s = sampler.sample(n_samples=1500, burn=500)
     print(f"  Gibbs: kept {len(beta_s)} draws (p={beta_s.shape[1]})")
 
-    # Posterior field draws: mu + Phi_all @ beta  (shape: n_draws x n_cells)
-    recon = mu_s[:, None] + beta_s @ Phi_all.T
+    # Posterior field draws: mu + (Phi_all - Xmean) @ beta  (centred design; shape n_draws x n_cells)
+    recon = mu_s[:, None] + beta_s @ (Phi_all - sampler.Xmean).T
     recon_mean = recon.mean(0).reshape(NY, NX)
     recon_std = recon.std(0).reshape(NY, NX)
 
@@ -186,12 +194,14 @@ def main():
     # bulk reduction is directional series/parallel, NOT a geometric mean (which is the
     # heuristic for areal 2D flow): arithmetic-mean k over depth within each x-column
     # (transverse / parallel to the path), then harmonic-mean those columns along x (series
-    # along the flow direction). NB this is still a BULK reduction — piping *initiates* at the
+    # along the flow direction). Average over the FULL aquifer depth (the whole sand layer
+    # conducts the underseepage that Sellmeijer's F_S depends on), over the central L_seep of
+    # the path under the levee. NB this is still a BULK reduction — piping *initiates* at the
     # most-permeable connected path (a high quantile of the field), so the scalar k_eff is a
     # deliberate simplification of this limit state (see README limitations).
     L_seep = 70.0
     cx0, cx1 = (W - L_seep) / 2, (W + L_seep) / 2
-    row_mask = y <= 0.4 * D
+    row_mask = np.ones(NY, dtype=bool)   # full aquifer depth conducts the underseepage
     col_mask = (x >= cx0) & (x <= cx1)
 
     def series_parallel_keff(k_grid):

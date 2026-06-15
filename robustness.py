@@ -35,8 +35,14 @@ def pf_for_seed(seed):
 def main():
     n = int(sys.argv[1]) if len(sys.argv) > 1 else len(SEEDS)
     seeds = (SEEDS + list(range(14, 14 + n)))[:n]
-    pf = np.array([pf_for_seed(s) for s in seeds])
-    rp = 1.0 / pf
+    try:
+        pf = np.array([pf_for_seed(s) for s in seeds])
+    finally:
+        # ALWAYS restore the canonical seed-2026 outputs, even on interrupt/error, so a
+        # crashed sweep never leaves a non-canonical kfield.npz for downstream stages.
+        run("kfield.py")
+        run("fragility.py")
+        run("breach_ep.py")
     print(f"\nRealization robustness over {len(seeds)} foundation seeds:")
     print(f"  P_f       median {np.median(pf):.4f} | range {pf.min():.4f}–{pf.max():.4f} "
           f"({pf.max()/pf.min():.1f}x spread)")
@@ -45,10 +51,6 @@ def main():
     seed0 = pf[0]
     print(f"  seed 2026 P_f {seed0:.4f} (1-in-{1/seed0:.0f}) — "
           f"{np.mean(pf < seed0)*100:.0f}% of realizations are less pessimistic")
-    # restore the canonical seed-2026 outputs
-    run("kfield.py")
-    run("fragility.py")
-    run("breach_ep.py")
     print("  (canonical seed-2026 outputs restored)")
 
 

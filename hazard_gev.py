@@ -22,7 +22,9 @@ import json
 import os
 from pathlib import Path
 
-os.environ.setdefault("JAX_PLATFORMS", "cpu")  # bit-identical NUTS on any machine
+os.environ.setdefault("JAX_PLATFORMS", "cpu")   # bit-identical NUTS on any machine
+os.environ.setdefault("JAX_ENABLE_X64", "1")    # float64: the |xi|<1e-6 Gumbel-switch and the
+                                                # GEV log-density near xi=0 are unstable in float32
 
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
@@ -64,8 +66,12 @@ def flow_to_head(q: np.ndarray) -> np.ndarray:
 # GEV machinery (EVT convention: xi>0 Frechet/heavy tail, xi<0 Weibull/bounded).
 # ----------------------------------------------------------------------------
 def gev_quantile(p, mu, sigma, xi):
-    """Return level at non-exceedance probability p. Gumbel branch for |xi|<1e-6."""
-    p = np.asarray(p, float)
+    """Return level at non-exceedance probability p. Gumbel branch for |xi|<1e-6.
+
+    p is clipped to (eps, 1-eps) so the unconditionally-evaluated -log(-log p) Gumbel term
+    cannot raise divide-by-zero / produce inf at p in {0, 1}.
+    """
+    p = np.clip(np.asarray(p, float), 1e-12, 1.0 - 1e-12)
     safe_xi = np.where(np.abs(xi) > 1e-6, xi, 1e-6)
     gev = mu + sigma * ((-np.log(p)) ** (-safe_xi) - 1.0) / safe_xi
     gumbel = mu - sigma * np.log(-np.log(p))
@@ -76,16 +82,40 @@ def return_level(T, mu, sigma, xi):
     return gev_quantile(1.0 - 1.0 / np.asarray(T, float), mu, sigma, xi)
 
 
-def fit_mle(x: np.ndarray):
-    """scipy genextreme uses shape c = -xi_EVT."""
-    c, loc, scale = stats.genextreme.fit(x)
-    return {"mu": loc, "sigma": scale, "xi": -c}
+def fit_mle(x: np.ndarray, lmo: dict | None = None):
+    """MLE for the GEV (scipy genextreme uses shape c = -xi_EVT).
+
+    The default optimiser has a degenerate basin near a near-Gumbel sample and can silently
+    return a grossly wrong optimum on perturbed data. We multi-start (L-moment seed +
+    a small grid of shapes) and keep the lowest negative log-likelihood.
+    """
+    starts = [{}]  # scipy's own default start
+    if lmo is not None:
+        starts.append({"args": (-lmo["xi"],), "loc": lmo["mu"], "scale": lmo["sigma"]})
+    for c0 in (-0.3, 0.0, 0.3):
+        starts.append({"args": (c0,), "loc": float(np.median(x)), "scale": float(x.std(ddof=1))})
+
+    best, best_nll = None, np.inf
+    for s in starts:
+        try:
+            c, loc, scale = stats.genextreme.fit(x, *s.get("args", ()),
+                                                 **{k: v for k, v in s.items() if k != "args"})
+            nll = float(stats.genextreme.nnlf((c, loc, scale), x))
+        except Exception:
+            continue
+        if np.isfinite(nll) and nll < best_nll:
+            best, best_nll = {"mu": loc, "sigma": scale, "xi": -c}, nll
+    if best is None:
+        raise RuntimeError("GEV MLE failed from all starting points")
+    return best
 
 
 def fit_lmoments(x: np.ndarray):
     """Hosking & Wallis GEV L-moment estimators via probability-weighted moments."""
     xs = np.sort(np.asarray(x, float))
     n = len(xs)
+    if n < 4:
+        raise ValueError("L-moment GEV fit needs n >= 4 annual maxima")
     i = np.arange(1, n + 1)
     b0 = xs.mean()
     b1 = np.sum((i - 1) / (n - 1) * xs) / n
@@ -96,6 +126,9 @@ def fit_lmoments(x: np.ndarray):
     k = 7.8590 * c + 2.9554 * c**2  # Hosking shape (xi_EVT = -k)
     from scipy.special import gamma
 
+    if abs(k) < 1e-6:  # Gumbel degeneracy: alpha, xi_loc -> 0/0 as k -> 0
+        alpha = l2 / np.log(2)
+        return {"mu": l1 - 0.5772156649 * alpha, "sigma": alpha, "xi": 0.0}
     g = gamma(1 + k)
     alpha = l2 * k / ((1 - 2 ** (-k)) * g)
     xi_loc = l1 - alpha * (1 - g) / k
@@ -151,8 +184,8 @@ def main():
     name = rec["station_name"]
     print(f"HAZARD — {name} (NRFA {STATION}), n={len(x)} AMAX, {min(rec['years'])}-{max(rec['years'])}")
 
-    mle = fit_mle(x)
     lmo = fit_lmoments(x)
+    mle = fit_mle(x, lmo)   # multi-start, seeded from the robust L-moment fit
     print(f"  MLE       mu={mle['mu']:.1f} sigma={mle['sigma']:.1f} xi={mle['xi']:+.3f}")
     print(f"  L-moments mu={lmo['mu']:.1f} sigma={lmo['sigma']:.1f} xi={lmo['xi']:+.3f}")
 
@@ -179,7 +212,7 @@ def main():
     rl_table["bayes_hi"] = np.quantile(bayes_rl, 0.975, axis=1)
 
     j100 = int(np.where(RETURN_PERIODS == 100)[0][0])
-    rl100_med, rl100_lo, rl100_hi = bayes_rl[j100].mean(), rl_table["bayes_lo"][j100], rl_table["bayes_hi"][j100]
+    rl100_lo, rl100_hi = rl_table["bayes_lo"][j100], rl_table["bayes_hi"][j100]
     print(f"  100-yr return level (flow):  MLE {rl_table['mle'][j100]:.0f}  "
           f"L-mom {rl_table['lmoments'][j100]:.0f}  "
           f"Bayes {rl_table['bayes_median'][j100]:.0f} m3/s "
